@@ -3,10 +3,11 @@ package cn.blockforge.generated.mod384a4d91.mixin;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
-import net.minecraft.world.entity.InventoryCarrier;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.behavior.TransportItemsBetweenContainers;
 import net.minecraft.world.entity.animal.golem.CopperGolem;
+import net.minecraft.world.entity.npc.InventoryCarrier;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import org.spongepowered.asm.mixin.Mixin;
@@ -120,7 +121,7 @@ public abstract class TransportItemsBetweenContainersMixin {
         if (!(golem instanceof InventoryCarrier carrier)) {
             return;
         }
-        Container inventory = carrier.getInventory();
+        SimpleContainer inventory = carrier.getInventory();
         if (inventory == null) {
             return;
         }
@@ -173,8 +174,8 @@ public abstract class TransportItemsBetweenContainersMixin {
             }
 
             if (!taken.isEmpty()) {
-                // Container 接口没有 addItem，使用自定义辅助方法放回
-                blockforge$addItemToContainer(source, taken);
+                // SimpleContainer 有 addItem 方法，直接调用
+                ((SimpleContainer) source).addItem(taken);
                 break;
             }
 
@@ -194,29 +195,6 @@ public abstract class TransportItemsBetweenContainersMixin {
             }
         }
         return false;
-    }
-
-    /** 将 ItemStack 放入 Container，模拟原版 addItem 的行为 */
-    @Unique
-    private static void blockforge$addItemToContainer(Container container, ItemStack stack) {
-        for (int i = 0; i < container.getContainerSize(); i++) {
-            ItemStack existing = container.getItem(i);
-            if (existing.isEmpty()) {
-                container.setItem(i, stack.copy());
-                stack.setCount(0);
-                return;
-            } else if (ItemStack.isSameItemSameComponents(existing, stack)) {
-                int canAdd = existing.getMaxStackSize() - existing.getCount();
-                int add = Math.min(canAdd, stack.getCount());
-                if (add > 0) {
-                    existing.grow(add);
-                    stack.shrink(add);
-                    if (stack.isEmpty()) {
-                        return;
-                    }
-                }
-            }
-        }
     }
 
     /* ============ 4. 路径校验缓存 ============ */
