@@ -3,6 +3,7 @@ package cn.blockforge.generated.mod384a4d91.mixin;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.Container;
+import net.minecraft.world.entity.InventoryCarrier;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.ai.behavior.TransportItemsBetweenContainers;
 import net.minecraft.world.entity.animal.golem.CopperGolem;
@@ -32,34 +33,24 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  *    - isAnotherMobInteractingWithTarget（在目标周围扫描其他实体）
  *      同样做短时缓存，减少每 tick 的实体扫描。
  *    缓存字段加在行为实例上，每个傀儡的大脑各自持有一份，互不干扰。
- *
- * ⚠️ 注意：本 Mixin 依赖 Mojang 官方映射下的方法名 / 字段名
- *    （pickUpItems、hasValidTravellingPath、isAnotherMobInteractingWithTarget、
- *    TransportItemTarget#container 等）。跨 Minecraft 版本升级时，
- *    请先用 IDE 反编译 TransportItemsBetweenContainers 校对签名。
  */
 @Mixin(TransportItemsBetweenContainers.class)
 public abstract class TransportItemsBetweenContainersMixin {
 
     /* ============ 可调参数 ============ */
 
-    /** 搬运途中移动速度倍率（只影响分类搬运，不影响平时溜达） */
     @Unique
     private static final float blockforge$SPEED_MULTIPLIER = 1.5f;
 
-    /** 路径校验结果缓存时长（tick） */
     @Unique
     private static final int blockforge$PATH_CACHE_TICKS = 8;
 
-    /** "目标是否被别人占用"缓存时长（tick） */
     @Unique
     private static final int blockforge$OCCUPY_CACHE_TICKS = 4;
 
-    /** 单次搬运的物品数量上限（原版 16 → 64） */
     @Unique
     private static final int blockforge$MAX_CARRY_COUNT = 64;
 
-    /** 单次搬运允许同时携带的物品种类数 */
     @Unique
     private static final int blockforge$MAX_CARRY_TYPES = 4;
 
@@ -92,11 +83,6 @@ public abstract class TransportItemsBetweenContainersMixin {
 
     /* ============ 2. 单次搬运数量 16 → 64 ============ */
 
-    /**
-     * 原版在拾取物品的循环里用字面量 16 作为单次携带上限。
-     * 这里把这个常量替换成 blockforge$MAX_CARRY_COUNT。
-     * require = 0：如果某个版本没有出现字面量 16，跳过即可，不报错。
-     */
     @ModifyConstant(
             method = "pickUpItems",
             constant = @Constant(intValue = 16),
@@ -107,7 +93,6 @@ public abstract class TransportItemsBetweenContainersMixin {
 
     /* ============ 3. 单次搬运多种物品 ============ */
 
-    /** start 有两个重载（PathfinderMob 与桥接的 LivingEntity），必须写全描述符 */
     @Inject(method = "start(Lnet/minecraft/server/level/ServerLevel;"
             + "Lnet/minecraft/world/entity/PathfinderMob;J)V", at = @At("HEAD"))
     private void blockforge$resetCaches(ServerLevel serverLevel, PathfinderMob mob,
@@ -118,13 +103,6 @@ public abstract class TransportItemsBetweenContainersMixin {
         this.blockforge$occupyCachePos = null;
     }
 
-    /**
-     * 原版一次只取一种物品。这里在 pickUpItems 结束后再扫一遍源容器，
-     * 把其它种类的物品也塞进铜傀儡的物品栏，直到达到数量上限或种类上限。
-     *
-     * 之所以放到 RETURN 而不是重写原方法：原版流程里对"手里拿的物品"
-     * 有额外记账，直接绕开容易让状态不一致；追加式注入最安全。
-     */
     @Inject(method = "pickUpItems", at = @At("RETURN"), require = 0)
     private void blockforge$carryMultipleTypes(ServerLevel level,
                                                PathfinderMob mob,
@@ -138,14 +116,15 @@ public abstract class TransportItemsBetweenContainersMixin {
             return;
         }
 
-        // 铜傀儡实现了 InventoryCarrier，物品栏就在这里。
-        // 若跨版本 API 变动，编译期会直接报错，方便定位。
-        var inventory = golem.getInventory();
+        // 使用 InventoryCarrier 接口获取物品栏，而不是直接调用 CopperGolem 的方法
+        if (!(golem instanceof InventoryCarrier carrier)) {
+            return;
+        }
+        Container inventory = carrier.getInventory();
         if (inventory == null) {
             return;
         }
 
-        // 统计当前携带量
         int carried = 0;
         for (int i = 0; i < inventory.getContainerSize(); i++) {
             carried += inventory.getItem(i).getCount();
@@ -154,7 +133,6 @@ public abstract class TransportItemsBetweenContainersMixin {
             return;
         }
 
-        // 记下傀儡已有的物品种类，避免重复计数
         int typesAdded = 0;
         for (int slot = 0;
              slot < source.getContainerSize() && typesAdded < blockforge$MAX_CARRY_TYPES;
@@ -165,7 +143,7 @@ public abstract class TransportItemsBetweenContainersMixin {
                 continue;
             }
             if (blockforge$inventoryContains(inventory, stack)) {
-                continue; // 这一类已经带在身上了
+                continue;
             }
 
             int space = blockforge$MAX_CARRY_COUNT - carried;
@@ -179,7 +157,6 @@ public abstract class TransportItemsBetweenContainersMixin {
                 continue;
             }
 
-            // 放进物品栏（先找空位，再尝试并入已有同类堆）
             for (int i = 0; i < inventory.getContainerSize() && !taken.isEmpty(); i++) {
                 ItemStack existing = inventory.getItem(i);
                 if (existing.isEmpty()) {
@@ -195,9 +172,9 @@ public abstract class TransportItemsBetweenContainersMixin {
                 }
             }
 
-            // 没塞进去的（物品栏满）还回源容器
             if (!taken.isEmpty()) {
-                source.addItem(taken);
+                // Container 接口没有 addItem，使用自定义辅助方法放回
+                blockforge$addItemToContainer(source, taken);
                 break;
             }
 
@@ -217,6 +194,29 @@ public abstract class TransportItemsBetweenContainersMixin {
             }
         }
         return false;
+    }
+
+    /** 将 ItemStack 放入 Container，模拟原版 addItem 的行为 */
+    @Unique
+    private static void blockforge$addItemToContainer(Container container, ItemStack stack) {
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack existing = container.getItem(i);
+            if (existing.isEmpty()) {
+                container.setItem(i, stack.copy());
+                stack.setCount(0);
+                return;
+            } else if (ItemStack.isSameItemSameComponents(existing, stack)) {
+                int canAdd = existing.getMaxStackSize() - existing.getCount();
+                int add = Math.min(canAdd, stack.getCount());
+                if (add > 0) {
+                    existing.grow(add);
+                    stack.shrink(add);
+                    if (stack.isEmpty()) {
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     /* ============ 4. 路径校验缓存 ============ */
@@ -248,7 +248,6 @@ public abstract class TransportItemsBetweenContainersMixin {
 
     /* ============ 5. 占用检查缓存 ============ */
 
-    /** 该方法签名里没有 mob，用世界时间做缓存键 */
     @Inject(method = "isAnotherMobInteractingWithTarget", at = @At("HEAD"), cancellable = true)
     private void blockforge$reuseOccupyResult(TransportItemsBetweenContainers.TransportItemTarget target,
                                               Level level,
