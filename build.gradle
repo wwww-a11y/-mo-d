@@ -1,6 +1,5 @@
 plugins {
-    // 针对未混淆版本使用 remap 插件
-    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
+    id 'net.fabricmc.fabric-loom' version "${loom_version}"
 }
 
 version = project.mod_version
@@ -16,10 +15,11 @@ repositories {
 
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    
-    // 未混淆版本，无需 mappings 配置
-    
-    // 使用 implementation（未混淆版本无需 modImplementation）
+
+    // 关键：mappings 配置必须有内容，否则 Loom 会报 "has no dependencies"
+    mappings loom.officialMojangMappings()
+
+    // 未混淆版本使用 implementation，不用 modImplementation
     implementation "net.fabricmc:fabric-loader:${project.loader_version}"
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 }
