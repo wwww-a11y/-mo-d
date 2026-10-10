@@ -1,5 +1,6 @@
 plugins {
-    id 'net.fabricmc.fabric-loom' version "${loom_version}"
+    // 针对未混淆版本使用 remap 插件
+    id 'net.fabricmc.fabric-loom-remap' version "${loom_version}"
 }
 
 version = project.mod_version
@@ -13,36 +14,19 @@ repositories {
     mavenCentral()
 }
 
-loom {
-    officialMojangMappings()
-}
-
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
-    // 删掉下面这一行
-    // mappings loom.officialMojangMappings()
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
-}
-dependencies {
-    minecraft "com.mojang:minecraft:${project.minecraft_version}"
-
-    // 代码使用 Mojang 官方映射（net.minecraft.server.level.ServerLevel 等），
-    // 因此这里必须用 officialMojangMappings()；用 Yarn 映射会编译不过。
-    // Fabric Loader / Fabric API 位于 Fabric Maven，不在 Maven Central，
-    // 并且必须用 modImplementation（modImplementation 才会被 remap 进产物）。
-    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
-    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+    
+    // 未混淆版本，无需 mappings 配置
+    
+    // 使用 implementation（未混淆版本无需 modImplementation）
+    implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 }
 
 processResources {
     inputs.property "version", project.version
-    // filter 同样按 filteringCharset 读写，不显式设成 UTF-8 时取平台默认
-    // （容器里常是 ASCII），会把 description 里的中文破坏成非法 UTF-8：
-    // Gradle 仍报 BUILD SUCCESSFUL，但最终 JAR 里的 JSON 已经坏了。
     filteringCharset = 'UTF-8'
-    // 只替换版本占位符。Gradle expand 会把 JSON 字符串里的 \n 解释成真实换行，
-    // 造成源文件合法、最终 JAR 中 fabric.mod.json 却损坏。
     filesMatching("fabric.mod.json") {
         filter { line -> line.replace('${version}', project.version.toString()) }
     }
