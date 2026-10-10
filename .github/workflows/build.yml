@@ -33,6 +33,3 @@ jobs:
           name: mod-jar
           path: build/libs/*.jar
           if-no-files-found: error
-base {
-    archivesName = project.archives_base_name
-}
