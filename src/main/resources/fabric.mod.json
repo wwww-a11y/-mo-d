@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "id": "mod_384a4d91",
+  "version": "${version}",
+  "name": "铜傀儡分类加速 (Faster Copper Golem Sorting)",
+  "description": "加快铜傀儡把物品分类搬运进容器的速度（空闲冷却压到0.4秒内、搬运速度×1.5、单次搬运上限提升到64个/4种），并缓存每tick重复的寻路校验与占用检查，显著减少大量铜傀儡造成的服务器卡顿。",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "cn.blockforge.generated.mod384a4d91.GeneratedMod"
+    ]
+  },
+  "mixins": [
+    "mod_384a4d91.mixins.json"
+  ],
+  "depends": {
+    "fabricloader": ">=0.19.3",
+    "minecraft": "~26.3",
+    "java": ">=25",
+    "fabric-api": "*"
+  }
+}
