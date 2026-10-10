@@ -21,19 +21,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
- * 铜傀儡"分类搬运"行为（TransportItemsBetweenContainers）的性能与吞吐调整：
- *
- * 1. 搬运速度：构造参数 speedModifier 乘以系数，傀儡往返箱子更快，分类吞吐更高。
- * 2. 单次搬运数量：把原版拾取上限 16 提升到 64，一趟能搬更多。
- * 3. 单次搬运种类：原版一趟只认一种物品，这里在拾取完成后继续扫描源容器，
- *    把其它种类的物品也补进傀儡携带，最多同时带 4 种。
- * 4. 减卡顿：
- *    - hasValidTravellingPath（重新校验到目标箱子的路径，内部会跑寻路）
- *      原版在走路途中每个 tick 都可能调用；这里把结果按目标坐标缓存若干 tick，
- *      路径失效最多晚 0.4 秒才被发觉，但寻路开销降到一个零头。
- *    - isAnotherMobInteractingWithTarget（在目标周围扫描其他实体）
- *      同样做短时缓存，减少每 tick 的实体扫描。
- *    缓存字段加在行为实例上，每个傀儡的大脑各自持有一份，互不干扰。
+ * 铜傀儡"分类搬运"行为（TransportItemsBetweenContainers）的性能与吞吐调整。
  */
 @Mixin(TransportItemsBetweenContainers.class)
 public abstract class TransportItemsBetweenContainersMixin {
@@ -104,20 +92,22 @@ public abstract class TransportItemsBetweenContainersMixin {
         this.blockforge$occupyCachePos = null;
     }
 
+    /**
+     * 修正：pickUpItems 的实际签名是 (PathfinderMob, Container)。
+     * 不再接收 ServerLevel 和 TransportItemTarget。
+     */
     @Inject(method = "pickUpItems", at = @At("RETURN"), require = 0)
-    private void blockforge$carryMultipleTypes(ServerLevel level,
-                                               PathfinderMob mob,
-                                               TransportItemsBetweenContainers.TransportItemTarget target,
+    private void blockforge$carryMultipleTypes(PathfinderMob mob,
+                                               Container source,
                                                CallbackInfo ci) {
         if (!(mob instanceof CopperGolem golem)) {
             return;
         }
-        Container source = target.container();
         if (source == null) {
             return;
         }
 
-        // 使用 InventoryCarrier 接口获取物品栏，而不是直接调用 CopperGolem 的方法
+        // 使用 InventoryCarrier 接口获取物品栏
         if (!(golem instanceof InventoryCarrier carrier)) {
             return;
         }
@@ -174,8 +164,12 @@ public abstract class TransportItemsBetweenContainersMixin {
             }
 
             if (!taken.isEmpty()) {
-                // SimpleContainer 有 addItem 方法，直接调用
-                ((SimpleContainer) source).addItem(taken);
+                // 放回源容器
+                if (source instanceof SimpleContainer simpleSource) {
+                    simpleSource.addItem(taken);
+                } else {
+                    blockforge$addItemToContainer(source, taken);
+                }
                 break;
             }
 
@@ -195,6 +189,29 @@ public abstract class TransportItemsBetweenContainersMixin {
             }
         }
         return false;
+    }
+
+    /** 将 ItemStack 放入 Container，模拟原版 addItem 的行为 */
+    @Unique
+    private static void blockforge$addItemToContainer(Container container, ItemStack stack) {
+        for (int i = 0; i < container.getContainerSize(); i++) {
+            ItemStack existing = container.getItem(i);
+            if (existing.isEmpty()) {
+                container.setItem(i, stack.copy());
+                stack.setCount(0);
+                return;
+            } else if (ItemStack.isSameItemSameComponents(existing, stack)) {
+                int canAdd = existing.getMaxStackSize() - existing.getCount();
+                int add = Math.min(canAdd, stack.getCount());
+                if (add > 0) {
+                    existing.grow(add);
+                    stack.shrink(add);
+                    if (stack.isEmpty()) {
+                        return;
+                    }
+                }
+            }
+        }
     }
 
     /* ============ 4. 路径校验缓存 ============ */
