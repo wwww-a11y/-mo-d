@@ -20,15 +20,15 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
-          gradle-version: '9.1.0'
+          gradle-version: '9.5.0'
 
       - name: Build with Gradle
         run: gradle build --no-daemon
 
       - name: Upload Mod JAR
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: mod-jar
           path: build/libs/*.jar
