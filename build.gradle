@@ -13,13 +13,22 @@ repositories {
     mavenCentral()
 }
 
+loom {
+    officialMojangMappings()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:${project.minecraft_version}"
+    // 删掉下面这一行
+    // mappings loom.officialMojangMappings()
+    modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
+}
 dependencies {
     minecraft "com.mojang:minecraft:${project.minecraft_version}"
 
     // 代码使用 Mojang 官方映射（net.minecraft.server.level.ServerLevel 等），
     // 因此这里必须用 officialMojangMappings()；用 Yarn 映射会编译不过。
-    mappings loom.officialMojangMappings()
-
     // Fabric Loader / Fabric API 位于 Fabric Maven，不在 Maven Central，
     // 并且必须用 modImplementation（modImplementation 才会被 remap 进产物）。
     modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
